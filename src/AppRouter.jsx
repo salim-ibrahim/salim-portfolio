@@ -1,7 +1,7 @@
 ﻿
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import App from "./App";
+import App from "./app";
 import AdminLayout from "./admin/AdminLayout";
 import AdminDashboard from "./admin/AdminDashboard";
 import AdminSection from "./admin/AdminSection";
