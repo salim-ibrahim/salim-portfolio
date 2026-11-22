@@ -1,0 +1,195 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+/* =========================================
+   1. GLOBAL DESIGN SYSTEM — THIS IS NOW THE SINGLE SOURCE OF TRUTH
+   Change a colour here ONCE and every section using
+   bg-background / text-champagne / bg-purple etc. follows it.
+   Tailwind v4: @theme turns these into real utilities.
+========================================= */
+
+@theme {
+    /* COFFEE PALETTE — single source of truth */
+    --color-background: #6b4a3a;
+    /* MOCHA — overall page background */
+    --color-mocha: #6b4a3a;
+    --color-latte: #e7d6c1;
+    /* light cream — big headings + light text on mocha */
+    --color-espresso: #2b1d17;
+    /* darkest brown — only for cards / dark accents */
+    --color-gold: #d9b878;
+    /* semi titles — lighter gold, readable on mocha */
+    --color-ink: #f3ead9;
+    /* normal writing — warm off-white on mocha */
+    --color-cream: #f3ead9;
+    --color-surface: #5a3d2f;
+    --color-purple: #6a5acd;
+    --color-champagne: #f0d9b5;
+    --color-lavender: #a678b9;
+    --color-text: #f3ead9;
+    --color-text-muted: rgba(243, 234, 217, 0.75);
+    --color-border: rgba(243, 234, 217, 0.16);
+    --color-glow: rgba(217, 184, 120, 0.22);
+    --font-sans: 'DM Sans', sans-serif;
+    --font-display: 'Playfair Display', serif;
+}
+
+:root {
+    /* Same values, for plain CSS / var() usage */
+    --color-background: #6b4a3a;
+    --color-surface: #5a3d2f;
+    --color-purple: #6a5acd;
+    --color-champagne: #f0d9b5;
+    --color-lavender: #a678b9;
+    --color-text: #f3ead9;
+    --color-text-muted: rgba(243, 234, 217, 0.75);
+    --color-border: rgba(243, 234, 217, 0.16);
+    --color-glow: rgba(217, 184, 120, 0.22);
+
+    font-family: 'DM Sans', sans-serif;
+    color: var(--color-text);
+    background: var(--color-background);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* NOTE: site is now DARK again (mocha). Navbar logo needs filter: invert(1) again — black logo would vanish on mocha, white/cream logo is correct. */
+
+/* =========================================
+   2. GLOBAL RESET
+========================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 90px;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: var(--color-background);
+    color: var(--color-text);
+}
+
+body,
+button,
+input,
+textarea {
+    font-family: 'DM Sans', sans-serif;
+}
+
+button {
+    cursor: pointer;
+}
+
+/* =========================================
+   3. TYPOGRAPHY
+========================================= */
+
+h1,
+h2,
+h3,
+h4 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+}
+
+p {
+    color: var(--color-text-muted);
+    line-height: 1.8;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* =========================================
+   4. GLOBAL LAYOUT
+========================================= */
+
+.container {
+    width: min(1120px, calc(100% - 48px));
+    margin-inline: auto;
+}
+
+.section-padding {
+    padding-block: 100px;
+}
+
+/* =========================================
+   5. BRAND GRADIENTS
+========================================= */
+
+.gradient-text {
+    background: linear-gradient(110deg, var(--color-champagne), var(--color-lavender));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* =========================================
+   6. GLASS SURFACES
+   NOTE: navbar / glass pills intentionally keep their own
+   bg-white/[0.08] — that is translucency, not a brand colour.
+========================================= */
+
+.glass {
+    background: rgba(45, 43, 85, 0.35);
+    border: 1px solid var(--color-border);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+/* =========================================
+   7. SELECTION
+========================================= */
+
+::selection {
+    background: var(--color-purple);
+    color: #ffffff;
+}
+
+/* =========================================
+   8. SCROLLBAR
+========================================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--color-surface);
+    border-radius: 20px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-purple);
+}
+
+/* =========================================
+   9. MOBILE RESPONSIVENESS
+========================================= */
+
+@media (max-width: 640px) {
+    .container {
+        width: min(100% - 32px, 1120px);
+    }
+
+    .section-padding {
+        padding-block: 72px;
+    }
+}

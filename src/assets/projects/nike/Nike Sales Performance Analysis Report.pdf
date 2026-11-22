@@ -1,0 +1,504 @@
+# F1 Race Strategy & Performance Analysis
+## Investigating the Relationship Between Qualifying Position, Pit-Stop Performance, Race Reliability and Driver Comebacks Using SQL
+
+## 1. Project Overview
+
+This project analyses historical Formula 1 racing data to investigate four aspects of race performance: pit-stop efficiency, pole-position conversion, circuit reliability and driver comebacks.
+
+The project uses the Ergast Formula 1 historical dataset, covering the 1950–2024 seasons. The dataset consists of 14 related tables containing approximately 701,009 records. These tables cover drivers, constructors, circuits, races, qualifying sessions, race results, pit stops, lap times, standings and other championship information.
+
+Python was used to prepare the database environment and load the CSV files into MySQL. The analytical work was conducted using SQL in MySQL Workbench. Four analytical queries were developed, with corresponding stored procedures, and their outputs were exported into Excel files.
+
+The project was guided by four questions:
+
+1. What proportion of pole positions result in race victories?
+2. Which circuits have the highest rates of entries with no recorded finishing position in the modern era?
+3. Which constructors record the lowest average clean pit-stop durations?
+4. Which drivers have achieved the greatest comebacks from starting positions outside the top ten to podium finishes?
+
+## 2. Project Objectives
+
+The objectives were to:
+
+- Examine the relationship between starting from pole position and winning a race.
+- Compare constructors based on average pit-stop duration.
+- Identify circuits with relatively high rates of entries without a recorded finishing position.
+- Identify outstanding driver performances involving substantial improvements from grid position to final classification.
+- Demonstrate the use of relational database analysis, SQL aggregation, conditional logic, joins and stored procedures.
+
+## 3. Dataset Description
+
+**Dataset:** Ergast Formula 1 Historical Dataset  
+**Coverage:** 1950–2024  
+**Number of tables:** 14  
+**Approximate total records:** 701,009
+
+The dataset contains the following tables:
+
+| Table | Records |
+|---|---:|
+| seasons | 75 |
+| circuits | 77 |
+| status | 139 |
+| constructors | 212 |
+| drivers | 861 |
+| races | 1,125 |
+| constructor_results | 12,625 |
+| constructor_standings | 13,391 |
+| driver_standings | 34,863 |
+| results | 26,759 |
+| qualifying | 10,494 |
+| pit_stops | 11,371 |
+| lap_times | 589,081 |
+| sprint_results | 360 |
+| **Total** | **701,009** |
+
+The tables provide different dimensions of Formula 1 history. For example, the `drivers` table contains driver information, `constructors` contains team information, `circuits` describes racing circuits, while `races` and `results` provide race-level and driver-level performance records.
+
+## 4. Tools and Technologies
+
+- **Microsoft Excel:** Initial preparation of the dataset and replacement of missing-value markers.
+- **Python:** Database creation and CSV loading.
+- **Pandas:** Reading and processing CSV files.
+- **PyMySQL:** Connecting Python to MySQL.
+- **SQLAlchemy:** Creating the database connection used by pandas.
+- **MySQL 8.0:** Relational database and analytical query execution.
+- **MySQL Workbench:** Writing, executing and managing SQL queries and exporting query results.
+- **SQL:** Joins, aggregate functions, conditional expressions, filtering, grouping and sorting.
+
+## 5. Project Workflow
+
+### Step 1: Prepare the dataset
+
+The original dataset was organised into 14 Excel sheets. Before loading the data into MySQL, the sheets were prepared for CSV import.
+
+The original files used `\N` to represent missing values. These markers were replaced with blank cells in Excel. Each sheet was then saved as a separate CSV file.
+
+The resulting CSV files were placed in one folder for Python to access.
+
+**Important:** This was the initial file-preparation stage. No additional SQL data-cleaning stage was performed after the files were loaded into MySQL.
+
+### Step 2: Create the MySQL database and load the CSV files
+
+Python was used to create a database named `f1_racing` and load the 14 CSV files into it.
+
+The process used:
+- Pandas to read the CSV files.
+- PyMySQL to connect to MySQL and create the database.
+- SQLAlchemy to establish the database connection used by `to_sql()`.
+- Python's `os` module to locate and loop through the CSV files.
+
+#### Python loading script
+
+Install the required packages if they are not already installed:
+
+```bash
+pip install pandas pymysql sqlalchemy
+```
+
+The following is a reusable version of the database-loading script. Replace the folder path and password placeholders with your own local details. Do not publish your database password in a public repository.
+
+```python
+import pandas as pd
+import pymysql
+from sqlalchemy import create_engine
+import os
+from urllib.parse import quote_plus
+
+# Update these values for your computer
+FOLDER = r"C:\Your\Path\To\F1 Racing Project"
+RAW_PWD = "YOUR_MYSQL_PASSWORD"
+
+PWD = quote_plus(RAW_PWD)
+
+# 1. Create the database
+print("1. Creating database f1_racing...")
+
+conn = pymysql.connect(
+    host="localhost",
+    user="root",
+    password=RAW_PWD
+)
+
+cursor = conn.cursor()
+cursor.execute(
+    "CREATE DATABASE IF NOT EXISTS f1_racing;"
+)
+
+conn.commit()
+conn.close()
+
+print("Database created!")
+
+# 2. Connect to the database
+engine = create_engine(
+    f"mysql+pymysql://root:{PWD}@localhost:3306/f1_racing"
+)
+
+# 3. Load all CSV files
+print("2. Loading CSV files...")
+
+for file in os.listdir(FOLDER):
+
+    if file.lower().endswith(".csv"):
+
+        table = (
+            file.lower()
+            .replace(".csv", "")
+            .strip()
+            .replace(" ", "_")
+        )
+
+        path = os.path.join(FOLDER, file)
+
+        print(f"Loading {table}...")
+
+        df = pd.read_csv(
+            path,
+            low_memory=False
+        )
+
+        df = df.replace("", None)
+
+        df.to_sql(
+            table,
+            engine,
+            if_exists="replace",
+            index=False,
+            chunksize=5000
+        )
+
+        print(f"Loaded {len(df)} rows")
+
+print("All CSV files loaded successfully.")
+```
+
+#### Explanation of the script
+
+1. The required Python libraries are imported.
+2. The folder containing the CSV files and MySQL password are specified.
+3. PyMySQL connects to the local MySQL server.
+4. The `CREATE DATABASE IF NOT EXISTS` statement creates `f1_racing` if it does not already exist.
+5. SQLAlchemy establishes a connection to the newly created database.
+6. Python loops through the CSV files in the selected folder.
+7. Each filename is converted into a lowercase table name, with spaces replaced by underscores.
+8. Pandas reads each CSV file into a DataFrame.
+9. Empty strings are replaced with `None`.
+10. `to_sql()` loads each DataFrame into MySQL.
+
+**Important implementation note:** The script uses `if_exists="replace"`. This replaces an existing table when the script is run again. It should therefore be used carefully if the tables have subsequently been modified. The script also creates tables from the imported data; it does not independently define primary keys or foreign-key constraints.
+
+### Step 3: Open the database in MySQL Workbench
+
+After loading the CSV files:
+
+1. Open MySQL Workbench.
+2. Connect to the local MySQL server.
+3. Locate the `f1_racing` database in the Schemas panel.
+4. Expand the database to view the imported tables.
+5. Open a new SQL query tab.
+6. Select the `f1_racing` database before running the analytical queries.
+
+You can select the database using:
+
+```sql
+USE f1_racing;
+```
+
+### Step 4: Analyse pit-stop performance by constructor
+
+**Analytical question:** Which constructors have the lowest average clean pit-stop duration?
+
+The `pit_stops` table contains pit-stop duration in milliseconds. However, unusually long durations, including stops around 180,000 milliseconds, can distort the average.
+
+To reduce the effect of these unusually long records, the analysis excludes pit stops lasting 40,000 milliseconds or more.
+
+The query joins `pit_stops`, `results` and `constructors` to associate each pit stop with its constructor.
+
+```sql
+SELECT
+    co.name,
+    ROUND(
+        AVG(p.milliseconds) / 1000,
+        2
+    ) AS avg_clean_pit,
+    COUNT(*) AS total_clean_pits
+
+FROM pit_stops p
+
+JOIN results r
+    ON p.raceId = r.raceId
+    AND p.driverId = r.driverId
+
+JOIN constructors co
+    ON r.constructorId = co.constructorId
+
+WHERE p.milliseconds < 40000
+
+GROUP BY co.name
+
+ORDER BY avg_clean_pit;
+```
+
+**Explanation:**
+
+- `JOIN` connects pit-stop records to race results and constructor information.
+- `AVG()` calculates the average duration.
+- Dividing by 1,000 converts milliseconds into seconds.
+- `ROUND(..., 2)` displays the average to two decimal places.
+- `WHERE p.milliseconds < 40000` excludes pit stops of 40 seconds or longer.
+- `COUNT(*)` counts the pit-stop records remaining after the filter.
+- `GROUP BY co.name` calculates the average separately for each constructor.
+- `ORDER BY avg_clean_pit` ranks constructors from the lowest average duration to the highest.
+
+The 40-second threshold is an analytical filtering decision. The resulting figure measures total recorded pit-stop duration, not just the stationary tyre-change time.
+
+**Key result:** Red Bull recorded the lowest average clean pit-stop duration at 23.58 seconds, followed by Mercedes at 23.61 seconds.
+
+### Step 5: Analyse DNF rates by circuit in the modern era
+
+**Analytical question:** Which circuits have the highest rates of entries without a recorded finishing position?
+
+An initial approach used `status != 'Finished'` to identify DNFs. This was problematic because drivers who finished one or more laps behind could have statuses such as `+1 Lap` or `+2 Laps`. These drivers had completed the race and should not automatically be classified as DNFs.
+
+The revised analysis uses `position IS NULL` as the operational indicator.
+
+```sql
+SELECT
+    c.name,
+    COUNT(*) AS entries,
+
+    SUM(
+        CASE
+            WHEN r.position IS NULL THEN 1
+            ELSE 0
+        END
+    ) AS dnfs,
+
+    ROUND(
+        SUM(
+            CASE
+                WHEN r.position IS NULL THEN 1
+                ELSE 0
+            END
+        ) / COUNT(*) * 100,
+        2
+    ) AS dnf_pct
+
+FROM results r
+
+JOIN races ra
+    ON r.raceId = ra.raceId
+
+JOIN circuits c
+    ON ra.circuitId = c.circuitId
+
+WHERE ra.year >= 2010
+
+GROUP BY c.name
+
+ORDER BY dnf_pct DESC
+
+LIMIT 10;
+```
+
+**Explanation:**
+
+- The query joins race results to races and circuits.
+- `WHERE ra.year >= 2010` restricts the analysis to 2010 onwards.
+- `COUNT(*)` calculates the number of driver entries at each circuit.
+- The `CASE` expression counts entries with no recorded finishing position.
+- The DNF percentage is calculated by dividing the number of such entries by total entries and multiplying by 100.
+- `ORDER BY dnf_pct DESC` ranks circuits from the highest rate to the lowest.
+- `LIMIT 10` returns the ten circuits with the highest rates.
+
+**Interpretation note:** `position IS NULL` is a proxy for a DNF in this analysis. It identifies entries without a recorded finishing position, which can include outcomes other than mechanical retirements. The result should therefore not be interpreted as a verified count of mechanical failures.
+
+**Key results:**
+
+- Mugello recorded the highest rate at 40%, based on 20 entries.
+- Albert Park recorded 28%, based on 275 entries.
+- Monaco recorded 22.48%, based on 298 entries.
+- Sepang recorded 22.47%, based on 178 entries.
+
+Mugello's relatively small sample should be considered when comparing its rate with circuits that have substantially more entries.
+
+### Step 6: Calculate the pole-to-win conversion rate
+
+**Analytical question:** How often does a driver starting from pole position win the race?
+
+The query identifies all records where the starting grid position is first and counts how many of those drivers also finished in first position.
+
+```sql
+SELECT
+    COUNT(*) AS poles,
+
+    SUM(
+        CASE
+            WHEN position = 1 THEN 1
+            ELSE 0
+        END
+    ) AS wins_from_pole,
+
+    ROUND(
+        SUM(
+            CASE
+                WHEN position = 1 THEN 1
+                ELSE 0
+            END
+        ) / COUNT(*) * 100,
+        2
+    ) AS pct
+
+FROM results
+
+WHERE grid = 1;
+```
+
+**Explanation:**
+
+- `WHERE grid = 1` selects all race-result records where a driver started from first position.
+- `COUNT(*)` counts the pole-position starts.
+- `CASE WHEN position = 1` identifies those pole starters who won.
+- The final expression calculates the percentage of pole starts converted into victories.
+
+This query has no additional year restriction. It therefore calculates the rate across all available records in the `results` table.
+
+**Key result:**
+
+| Measure | Result |
+|---|---:|
+| Pole-position starts | 1,136 |
+| Wins from pole | 481 |
+| Pole-to-win conversion | 42.34% |
+
+The result indicates that fewer than half of the recorded pole-position starts resulted in a race victory.
+
+### Step 7: Identify the greatest driver comebacks in the modern era
+
+**Analytical question:** Which drivers achieved the greatest improvements from their starting grid positions to podium finishes?
+
+The analysis focuses on drivers who started outside the top ten and finished in the top three from 2010 onwards.
+
+```sql
+SELECT
+    ra.year,
+    c.name,
+    CONCAT(d.forename, ' ', d.surname) AS driver,
+    r.grid,
+    r.position,
+    (r.grid - r.position) AS gained
+
+FROM results r
+
+JOIN races ra
+    ON r.raceId = ra.raceId
+
+JOIN circuits c
+    ON ra.circuitId = c.circuitId
+
+JOIN drivers d
+    ON r.driverId = d.driverId
+
+WHERE r.grid > 10
+    AND r.position <= 3
+    AND ra.year >= 2010
+
+ORDER BY gained DESC
+
+LIMIT 10;
+```
+
+**Explanation:**
+
+- The query joins race results with races, circuits and drivers.
+- `r.grid > 10` selects drivers who started outside the top ten.
+- `r.position <= 3` restricts the results to podium finishes.
+- `ra.year >= 2010` limits the analysis to the modern era used in this project.
+- `CONCAT()` combines the driver's first and last names.
+- `grid - position` calculates the number of positions gained.
+- `ORDER BY gained DESC` ranks the biggest improvements first.
+- `LIMIT 10` returns the ten greatest comebacks identified by the query.
+
+**Key result:** Sebastian Vettel's 2012 Abu Dhabi performance ranked first. He started from 24th position and finished third, gaining 21 places.
+
+### Step 8: Export the analytical results
+
+After executing each query in MySQL Workbench, the result grids were exported into Excel files.
+
+The four outputs were organised as follows:
+
+| Output | Analysis |
+|---|---|
+| answer_1 | Average clean pit-stop duration by constructor |
+| answer_2 | Pole-to-win conversion rate |
+| answer_3 | DNF rates by circuit |
+| answer_4 | Top driver comebacks |
+
+These exported files provide a convenient way to review, present and reference the analytical findings.
+
+## 6. Key Findings
+
+### Pit-stop performance
+
+Red Bull recorded the lowest average clean pit-stop duration at 23.58 seconds, followed closely by Mercedes at 23.61 seconds. The results show relatively close average durations among several constructors.
+
+### Pole-to-win conversion
+
+Out of 1,136 recorded pole-position starts, 481 resulted in victories. This represents a conversion rate of 42.34%, demonstrating that securing pole position does not guarantee a race win.
+
+### Circuit reliability
+
+Mugello had the highest observed rate of entries without a recorded finishing position at 40%, although the result was based on only 20 entries. Albert Park recorded the second-highest rate at 28%, based on 275 entries.
+
+### Driver comebacks
+
+Sebastian Vettel's 2012 Abu Dhabi performance was the largest comeback in the returned results. Starting from 24th position, he finished third and gained 21 positions.
+
+## 7. Limitations and Interpretation
+
+The findings should be interpreted in light of the following limitations:
+
+1. **Different analytical periods:** The pole-to-win query uses all available records in the `results` table, while the DNF and comeback queries are restricted to 2010 onwards. The pit-stop query uses all available records in the `pit_stops` table, which has its own historical coverage.
+
+2. **Pit-stop filtering:** The 40-second threshold is an analytical assumption used to exclude unusually long durations. It does not establish that every excluded stop was erroneous.
+
+3. **Pit-stop measurement:** The recorded duration represents total pit-stop time from entry to exit, not just the stationary tyre-change time.
+
+4. **DNF definition:** The project uses a missing finishing position as its DNF indicator. This is a practical proxy and may include disqualifications or other outcomes without a recorded position.
+
+5. **Sample size:** Mugello's 40% rate is based on only 20 entries. It should not be treated as directly equivalent in reliability to a rate based on hundreds of entries.
+
+6. **Descriptive analysis:** The results identify historical patterns and comparisons. They do not establish that pit-stop duration, qualifying position or circuit characteristics independently cause a particular race outcome.
+
+7. **Initial data preparation:** Missing-value markers were handled in Excel before CSV import. No separate SQL data-cleaning or database-validation stage was performed after loading.
+
+## 8. Conclusion
+
+This project demonstrates how SQL can be used to extract meaningful performance insights from a large, multi-table historical sports dataset. By combining joins, conditional expressions, aggregate functions, filtering and ranking, the analysis investigated four important dimensions of Formula 1 performance.
+
+The findings show a 42.34% pole-to-win conversion rate, Red Bull's leading average clean pit-stop duration of 23.58 seconds, notable differences in circuit-level rates of entries without recorded finishing positions, and significant comeback performances by drivers.
+
+Beyond the findings, the project demonstrates practical experience in preparing structured datasets, loading data into MySQL, writing analytical SQL queries, developing corresponding stored procedures and exporting results for presentation.
+
+## 9. Skills Demonstrated
+
+- Relational database management
+- MySQL and SQL query development
+- SQL joins and aggregate functions
+- Conditional logic using `CASE`
+- Data filtering and grouping
+- Analytical ranking and calculations
+- Stored procedure development
+- Python-assisted database loading
+- Pandas, PyMySQL and SQLAlchemy
+- MySQL Workbench
+- Data interpretation and reporting
+
+## 10. Project Deliverables
+
+- Python database-loading script
+- MySQL analytical queries and corresponding stored procedures
+- Four Excel files containing the exported query results
+- Project documentation and analysis
+
