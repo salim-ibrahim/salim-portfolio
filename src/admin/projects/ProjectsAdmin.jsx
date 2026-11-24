@@ -1,5 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { fetchMediaAssets, getMediaPublicUrl } from "../../lib/media";
 import ProjectOrganization from "./ProjectOrganization";
 import ProjectMigration from "./ProjectMigration";
 import {
@@ -21,6 +22,7 @@ const emptyProject = {
     data_source_label: "",
     data_source_url: "",
     content_blocks: "[]",
+    cover_media_id: "",
     is_featured: false,
     is_published: false,
     sort_order: 0,
@@ -40,6 +42,7 @@ function ProjectsAdmin() {
     const [projects, setProjects] = useState([]);
     const [categories, setCategories] = useState([]);
     const [placements, setPlacements] = useState([]);
+    const [mediaAssets, setMediaAssets] = useState([]);
     const [form, setForm] = useState(emptyProject);
     const [editingId, setEditingId] = useState(null);
     const [search, setSearch] = useState("");
@@ -60,10 +63,12 @@ function ProjectsAdmin() {
                 projectsResult,
                 categoriesResult,
                 placementsResult,
+                mediaResult,
             ] = await Promise.all([
                 supabase.from("projects").select("*").order("sort_order"),
                 supabase.from("project_categories").select("*").order("sort_order"),
                 supabase.from("project_placements").select("*").order("sort_order"),
+                fetchMediaAssets(),
             ]);
 
             if (projectsResult.error) throw projectsResult.error;
@@ -71,6 +76,7 @@ function ProjectsAdmin() {
             if (placementsResult.error) throw placementsResult.error;
 
             const projectRows = projectsResult.data || [];
+            setMediaAssets((mediaResult || []).filter((asset) => asset.mime_type?.startsWith("image/")));
             setCategories(categoriesResult.data || []);
             setPlacements(placementsResult.data || []);
 
@@ -151,6 +157,7 @@ function ProjectsAdmin() {
             data_source_label: project.data_source_label ?? "",
             data_source_url: project.data_source_url ?? "",
             content_blocks: JSON.stringify(project.content_blocks || [], null, 2),
+            cover_media_id: project.cover_media_id || "",
             category_ids: project.category_ids || [],
             placement_ids: project.placement_ids || [],
         });
@@ -170,6 +177,11 @@ function ProjectsAdmin() {
                 ? current[field].filter((item) => item !== id)
                 : [...current[field], id],
         }));
+    }
+
+    function imageUrl(mediaId) {
+        const asset = mediaAssets.find((item) => item.id === mediaId);
+        return asset ? getMediaPublicUrl(asset) : "";
     }
 
     async function saveProject(event) {
@@ -206,6 +218,7 @@ function ProjectsAdmin() {
                 data_source_label: cleanText(form.data_source_label) || null,
                 data_source_url: cleanText(form.data_source_url) || null,
                 content_blocks: blocks,
+                cover_media_id: form.cover_media_id || null,
                 is_featured: form.is_featured,
                 is_published: form.is_published,
                 sort_order: Number(form.sort_order) || 0,
@@ -437,7 +450,7 @@ function ProjectsAdmin() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-4 text-slate-400">{project.category || "Ã¢â‚¬â€"}</td>
+                                        <td className="px-4 py-4 text-slate-400">{project.category || "â€”"}</td>
                                         <td className="px-4 py-4">
                                             <span className={`rounded-full px-2.5 py-1 text-xs ${
                                                 project.is_published
@@ -540,6 +553,49 @@ function ProjectsAdmin() {
                                 <div className="sm:col-span-2">
                                     <label className={labelClass}>Description</label>
                                     <textarea rows={4} value={form.description || ""} onChange={(e) => updateField("description", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div className="sm:col-span-2 rounded-xl border border-white/10 bg-[#0b0e14] p-4">
+                                    <div className="mb-3">
+                                        <label className={labelClass}>Project cover image</label>
+                                        <p className="text-xs text-slate-500">
+                                            Choose an image already uploaded to your Media Library. Upload new images from the Media Library first.
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                                        <div className="min-w-0 flex-1">
+                                            <select
+                                                value={form.cover_media_id || ""}
+                                                onChange={(e) => updateField("cover_media_id", e.target.value)}
+                                                className={inputClass}
+                                            >
+                                                <option value="">No cover image selected</option>
+                                                {mediaAssets.map((asset) => (
+                                                    <option key={asset.id} value={asset.id}>
+                                                        {asset.original_name || asset.file_path}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateField("cover_media_id", "")}
+                                                disabled={!form.cover_media_id}
+                                                className="mt-2 text-xs text-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
+                                            >
+                                                Remove selected image
+                                            </button>
+                                            {mediaAssets.length === 0 && (
+                                                <p className="mt-2 text-xs text-amber-300">No images found in the Media Library.</p>
+                                            )}
+                                        </div>
+                                        {form.cover_media_id && imageUrl(form.cover_media_id) && (
+                                            <img
+                                                src={imageUrl(form.cover_media_id)}
+                                                alt="Selected project cover preview"
+                                                className="h-32 w-full rounded-lg border border-white/10 object-cover sm:w-48"
+                                            />
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div>
@@ -674,6 +730,7 @@ function ProjectsAdmin() {
 }
 
 export default ProjectsAdmin;
+
 
 
 

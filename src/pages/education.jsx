@@ -1,17 +1,32 @@
+
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "../lib/supabase";
 import { educationData } from "../data/education";
 
-// One shared timing so the whole LEFT column and the whole RIGHT column
-// slide in together, as two blocks, instead of row-by-row.
+// Shared entrance animations for both columns.
 const leftVariant = {
     hidden: { opacity: 0, x: "-100vw" },
-    show: { opacity: 1, x: 0, transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] } },
+    show: {
+        opacity: 1,
+        x: 0,
+        transition: {
+            duration: 0.9,
+            ease: [0.22, 1, 0.36, 1],
+        },
+    },
 };
+
 const rightVariant = {
     hidden: { opacity: 0, x: "100vw" },
-    show: { opacity: 1, x: 0, transition: { duration: 0.9, ease: [0.22, 1, 0.36, 1] } },
+    show: {
+        opacity: 1,
+        x: 0,
+        transition: {
+            duration: 0.9,
+            ease: [0.22, 1, 0.36, 1],
+        },
+    },
 };
 
 export default function Education() {
@@ -117,20 +132,59 @@ export default function Education() {
 
     return (
         <section id="education" className="relative overflow-hidden bg-mocha">
-            {/* DIRTY-BLACK SEPARATOR Ã¢â‚¬â€ v1, same as Skills / Experience / Projects: ~2cm band fading down into mocha + spreading to the edges */}
-            <div aria-hidden="true" className="relative h-[76px] w-full overflow-hidden" style={{ background: "linear-gradient(to bottom, #050504 0%, #140E0A 28%, #2E1C14 55%, #4E3122 78%, #6B4A3A 100%)" }}>
-                <div className="absolute inset-0" style={{ background: "radial-gradient(120% 130% at 50% -20%, rgba(5,5,4,0.95) 0%, rgba(20,14,10,0.65) 38%, rgba(107,74,58,0) 72%)" }} />
-                <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(5,5,4,0.88) 0%, rgba(5,5,4,0.25) 18%, rgba(5,5,4,0) 42%, rgba(5,5,4,0) 58%, rgba(5,5,4,0.25) 82%, rgba(5,5,4,0.88) 100%)" }} />
-                <div className="absolute inset-x-0 bottom-0 h-[22px]" style={{ background: "linear-gradient(to bottom, rgba(107,74,58,0) 0%, rgba(107,74,58,0.55) 55%, #6B4A3A 100%)", filter: "blur(2px)" }} />
+
+            {/* Section separator */}
+            <div
+                aria-hidden="true"
+                className="relative h-[76px] w-full overflow-hidden"
+                style={{
+                    background: "linear-gradient(to bottom, #050504 0%, #140E0A 28%, #2E1C14 55%, #4E3122 78%, #6B4A3A 100%)",
+                }}
+            >
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        background: "radial-gradient(120% 130% at 50% -20%, rgba(5,5,4,0.95) 0%, rgba(20,14,10,0.65) 38%, rgba(107,74,58,0) 72%)",
+                    }}
+                />
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        background: "linear-gradient(to right, rgba(5,5,4,0.88) 0%, rgba(5,5,4,0.25) 18%, rgba(5,5,4,0) 42%, rgba(5,5,4,0) 58%, rgba(5,5,4,0.25) 82%, rgba(5,5,4,0.88) 100%)",
+                    }}
+                />
+                <div
+                    className="absolute inset-x-0 bottom-0 h-[22px]"
+                    style={{
+                        background: "linear-gradient(to bottom, rgba(107,74,58,0) 0%, rgba(107,74,58,0.55) 55%, #6B4A3A 100%)",
+                        filter: "blur(2px)",
+                    }}
+                />
             </div>
+
             <div className="container mx-auto max-w-7xl px-6 pb-12 pt-12 sm:pb-16 sm:pt-16 lg:px-10">
-                <motion.div initial={{ opacity: 0, y: 25 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mb-8">
-                    <h2 className="text-4xl font-bold tracking-tight text-espresso sm:text-5xl">Education</h2>
+
+                {/* Heading */}
+                <motion.div
+                    initial={{ opacity: 0, y: 25 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.6 }}
+                    className="mb-8"
+                >
+                    <h2 className="text-4xl font-bold tracking-tight text-espresso sm:text-5xl">
+                        Education
+                    </h2>
                 </motion.div>
 
-                {/* Parent controls the timing: nothing moves until the section
-                    itself enters view, then BOTH columns slide in together. */}
-                <motion.div key={education.map(item => item.id).join("-")} initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.2 }} className="space-y-10">
+                {/* Education records */}
+                <motion.div
+                    key={education.map(item => item.id).join("-")}
+                    initial="hidden"
+                    whileInView="show"
+                    viewport={{ once: true, amount: 0.2 }}
+                    className="space-y-10"
+                >
                     {education.map((item, index) => {
                         const isReversed = index % 2 === 1;
 
@@ -139,6 +193,7 @@ export default function Education() {
                                 key={item.id}
                                 className="grid items-center gap-8 lg:grid-cols-2"
                             >
+
                                 {/* Institution details */}
                                 <motion.div
                                     variants={isReversed ? rightVariant : leftVariant}
@@ -177,27 +232,77 @@ export default function Education() {
                                     </div>
                                 </motion.div>
 
-                                {/* Institution image */}
+                                {/* Interactive 3D institution card */}
                                 <motion.div
                                     variants={isReversed ? leftVariant : rightVariant}
-                                    className={`w-2/3 justify-self-center overflow-hidden rounded-2xl border border-cream/15 bg-espresso/20 shadow-[0_18px_40px_rgba(0,0,0,0.35)] ${isReversed
-                                        ? "order-1 lg:justify-self-start"
-                                        : "order-2 lg:justify-self-end"
+                                    className={`w-2/3 justify-self-center ${isReversed
+                                            ? "order-1 lg:justify-self-start"
+                                            : "order-2 lg:justify-self-end"
                                         }`}
+                                    style={{ perspective: 1200 }}
                                 >
-                                    <img
-                                        src={item.image}
-                                        alt={item.imageAlt}
-                                        className="aspect-[16/10] w-full object-cover"
-                                    />
+                                    <motion.div
+                                        initial={false}
+                                        whileHover={{
+                                            y: -10,
+                                            rotateX: 8,
+                                            rotateY: isReversed ? 8 : -8,
+                                            scale: 1.035,
+                                        }}
+                                        transition={{
+                                            type: "spring",
+                                            stiffness: 180,
+                                            damping: 18,
+                                            mass: 0.7,
+                                        }}
+                                        className="group relative overflow-hidden rounded-2xl border border-cream/15 bg-espresso/30 shadow-[0_18px_40px_rgba(0,0,0,0.35)] transition-colors duration-500 hover:border-gold/60 hover:shadow-[0_28px_60px_rgba(0,0,0,0.55)]"
+                                        style={{
+                                            transformStyle: "preserve-3d",
+                                        }}
+                                    >
+                                        {/* Floating image */}
+                                        <motion.div
+                                            initial={false}
+                                            whileHover={{
+                                                z: 45,
+                                                rotateX: 12,
+                                                rotateZ: isReversed ? 3 : -3,
+                                                scale: 1.04,
+                                            }}
+                                            transition={{
+                                                type: "spring",
+                                                stiffness: 160,
+                                                damping: 16,
+                                            }}
+                                            className="relative overflow-hidden"
+                                            style={{
+                                                transformStyle: "preserve-3d",
+                                            }}
+                                        >
+                                            <img
+                                                src={item.image}
+                                                alt={item.imageAlt}
+                                                className="aspect-[16/10] w-full rounded-xl object-cover shadow-xl transition-[filter] duration-500 group-hover:brightness-110"
+                                            />
+                                        </motion.div>
 
-                                    <p className="px-4 py-3 text-sm font-semibold text-cream/85">
-                                        {item.imageCaption}{" "}
-                                        <span className="font-normal text-cream/60">
-                                            {item.imageLocation}
-                                        </span>
-                                    </p>
+                                        {/* Image caption */}
+                                        <motion.p
+                                            initial={false}
+                                            whileHover={{ z: 25 }}
+                                            className="relative px-4 py-3 text-sm font-semibold text-cream/85"
+                                            style={{
+                                                transform: "translateZ(15px)",
+                                            }}
+                                        >
+                                            {item.imageCaption}{" "}
+                                            <span className="font-normal text-cream/60">
+                                                {item.imageLocation}
+                                            </span>
+                                        </motion.p>
+                                    </motion.div>
                                 </motion.div>
+
                             </div>
                         );
                     })}

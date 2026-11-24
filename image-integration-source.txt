@@ -1,0 +1,1040 @@
+========== ProjectsAdmin.jsx ==========
+import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import ProjectOrganization from "./ProjectOrganization";
+import ProjectMigration from "./ProjectMigration";
+import {
+    Plus, Search, Pencil, Trash2, X, Save, RefreshCw,
+    FolderKanban, ExternalLink
+} from "lucide-react";
+
+const emptyProject = {
+    project_key: "",
+    title: "",
+    category: "",
+    subtitle: "",
+    description: "",
+    technologies: "",
+    icon: "",
+    project_number: "",
+    github_url: "",
+    live_url: "",
+    data_source_label: "",
+    data_source_url: "",
+    content_blocks: "[]",
+    is_featured: false,
+    is_published: false,
+    sort_order: 0,
+    category_ids: [],
+    placement_ids: [],
+};
+
+function slugify(value) {
+    return String(value ?? "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+}
+
+function ProjectsAdmin() {
+    const [projects, setProjects] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [placements, setPlacements] = useState([]);
+    const [form, setForm] = useState(emptyProject);
+    const [editingId, setEditingId] = useState(null);
+    const [search, setSearch] = useState("");
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [showEditor, setShowEditor] = useState(false);
+    const [showOrganization, setShowOrganization] = useState(false);
+    const [showMigration, setShowMigration] = useState(false);
+    const [error, setError] = useState("");
+    const [notice, setNotice] = useState("");
+
+    async function loadData() {
+        setLoading(true);
+        setError("");
+
+        try {
+            const [
+                projectsResult,
+                categoriesResult,
+                placementsResult,
+            ] = await Promise.all([
+                supabase.from("projects").select("*").order("sort_order"),
+                supabase.from("project_categories").select("*").order("sort_order"),
+                supabase.from("project_placements").select("*").order("sort_order"),
+            ]);
+
+            if (projectsResult.error) throw projectsResult.error;
+            if (categoriesResult.error) throw categoriesResult.error;
+            if (placementsResult.error) throw placementsResult.error;
+
+            const projectRows = projectsResult.data || [];
+            setCategories(categoriesResult.data || []);
+            setPlacements(placementsResult.data || []);
+
+            if (projectRows.length) {
+                const ids = projectRows.map((project) => project.id);
+
+                const [categoryAssignments, placementAssignments] = await Promise.all([
+                    supabase
+                        .from("project_category_assignments")
+                        .select("project_id, category_id")
+                        .in("project_id", ids),
+                    supabase
+                        .from("project_placement_assignments")
+                        .select("project_id, placement_id, sort_order")
+                        .in("project_id", ids),
+                ]);
+
+                if (categoryAssignments.error) throw categoryAssignments.error;
+                if (placementAssignments.error) throw placementAssignments.error;
+
+                const categoryMap = {};
+                const placementMap = {};
+
+                (categoryAssignments.data || []).forEach((item) => {
+                    categoryMap[item.project_id] ||= [];
+                    categoryMap[item.project_id].push(item.category_id);
+                });
+
+                (placementAssignments.data || []).forEach((item) => {
+                    placementMap[item.project_id] ||= [];
+                    placementMap[item.project_id].push(item.placement_id);
+                });
+
+                setProjects(projectRows.map((project) => ({
+                    ...project,
+                    category_ids: categoryMap[project.id] || [],
+                    placement_ids: placementMap[project.id] || [],
+                })));
+            } else {
+                setProjects([]);
+            }
+        } catch (err) {
+            setError(err.message || "Unable to load projects.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    function openNewProject() {
+        setEditingId(null);
+        setForm({ ...emptyProject });
+        setError("");
+        setNotice("");
+        setShowEditor(true);
+    }
+
+    function openEditProject(project) {
+        setEditingId(project.id);
+        setForm({
+            ...emptyProject,
+            ...project,
+            project_key: project.project_key ?? "",
+            title: project.title ?? "",
+            category: project.category ?? "",
+            subtitle: project.subtitle ?? "",
+            description: project.description ?? "",
+            technologies: Array.isArray(project.technologies)
+                ? project.technologies.join("\n")
+                : "",
+            icon: project.icon ?? "",
+            project_number: project.project_number ?? "",
+            github_url: project.github_url ?? "",
+            live_url: project.live_url ?? "",
+            data_source_label: project.data_source_label ?? "",
+            data_source_url: project.data_source_url ?? "",
+            content_blocks: JSON.stringify(project.content_blocks || [], null, 2),
+            category_ids: project.category_ids || [],
+            placement_ids: project.placement_ids || [],
+        });
+        setError("");
+        setNotice("");
+        setShowEditor(true);
+    }
+
+    function updateField(field, value) {
+        setForm((current) => ({ ...current, [field]: value }));
+    }
+
+    function toggleAssignment(field, id) {
+        setForm((current) => ({
+            ...current,
+            [field]: current[field].includes(id)
+                ? current[field].filter((item) => item !== id)
+                : [...current[field], id],
+        }));
+    }
+
+    async function saveProject(event) {
+        event.preventDefault();
+        setSaving(true);
+        setError("");
+        setNotice("");
+
+        try {
+            const blocks = JSON.parse(form.content_blocks || "[]");
+
+            if (!Array.isArray(blocks)) {
+                throw new Error("Project content must be a JSON array.");
+            }
+
+            const cleanText = (value) => String(value ?? "").trim();
+
+            const projectData = {
+                project_key: cleanText(form.project_key) || slugify(form.title),
+                title: cleanText(form.title),
+                category: cleanText(form.category) || null,
+                subtitle: cleanText(form.subtitle) || null,
+                description: cleanText(form.description) || null,
+                technologies: String(form.technologies ?? "")
+                    .split("\n")
+                    .map(cleanText)
+                    .filter(Boolean),
+                icon: cleanText(form.icon) || null,
+                project_number: form.project_number === ""
+                    ? null
+                    : Number(form.project_number),
+                github_url: cleanText(form.github_url) || null,
+                live_url: cleanText(form.live_url) || null,
+                data_source_label: cleanText(form.data_source_label) || null,
+                data_source_url: cleanText(form.data_source_url) || null,
+                content_blocks: blocks,
+                is_featured: form.is_featured,
+                is_published: form.is_published,
+                sort_order: Number(form.sort_order) || 0,
+            };
+
+            if (!projectData.title || !projectData.project_key) {
+                throw new Error("Project title and project key are required.");
+            }
+
+            let projectId = editingId;
+
+            if (editingId) {
+                const { error: updateError } = await supabase
+                    .from("projects")
+                    .update(projectData)
+                    .eq("id", editingId);
+
+                if (updateError) throw updateError;
+            } else {
+                const { data, error: insertError } = await supabase
+                    .from("projects")
+                    .insert(projectData)
+                    .select("id")
+                    .single();
+
+                if (insertError) throw insertError;
+                projectId = data.id;
+            }
+
+            const { error: removeCategoriesError } = await supabase
+                .from("project_category_assignments")
+                .delete()
+                .eq("project_id", projectId);
+
+            if (removeCategoriesError) throw removeCategoriesError;
+
+            const { error: removePlacementsError } = await supabase
+                .from("project_placement_assignments")
+                .delete()
+                .eq("project_id", projectId);
+
+            if (removePlacementsError) throw removePlacementsError;
+
+            if (form.category_ids.length) {
+                const { error: categoryError } = await supabase
+                    .from("project_category_assignments")
+                    .insert(form.category_ids.map((categoryId) => ({
+                        project_id: projectId,
+                        category_id: categoryId,
+                    })));
+
+                if (categoryError) throw categoryError;
+            }
+
+            if (form.placement_ids.length) {
+                const { error: placementError } = await supabase
+                    .from("project_placement_assignments")
+                    .insert(form.placement_ids.map((placementId, index) => ({
+                        project_id: projectId,
+                        placement_id: placementId,
+                        sort_order: index,
+                    })));
+
+                if (placementError) throw placementError;
+            }
+
+            setShowEditor(false);
+            setNotice(editingId ? "Project updated successfully." : "Project created successfully.");
+            await loadData();
+        } catch (err) {
+            setError(err.message || "Unable to save project.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function deleteProject(project) {
+        if (!window.confirm(`Delete "${project.title}"? This cannot be undone.`)) return;
+
+        setError("");
+        setNotice("");
+
+        const { error: deleteError } = await supabase
+            .from("projects")
+            .delete()
+            .eq("id", project.id);
+
+        if (deleteError) {
+            setError(deleteError.message);
+            return;
+        }
+
+        setNotice("Project deleted.");
+        await loadData();
+    }
+
+    const filteredProjects = projects.filter((project) =>
+        `${project.title} ${project.category || ""} ${project.project_key}`
+            .toLowerCase()
+            .includes(search.toLowerCase())
+    );
+
+    const inputClass = "w-full rounded-lg border border-white/10 bg-[#0b0e14] px-3 py-2.5 text-sm text-white outline-none focus:border-amber-400";
+    const labelClass = "mb-1.5 block text-sm font-medium text-slate-300";
+
+    return (
+        <div className="space-y-6">
+            {showMigration && (
+                <ProjectMigration onComplete={async () => {
+                    await loadData();
+                    setShowMigration(false);
+                }} />
+            )}
+            {showOrganization && (
+                <ProjectOrganization onClose={() => {
+                    setShowOrganization(false);
+                    loadData();
+                }} />
+            )}
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                <div>
+                    <div className="flex items-center gap-3">
+                        <FolderKanban className="text-amber-400" size={25} />
+                        <h1 className="text-2xl font-semibold text-white">Projects</h1>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-400">
+                        Create, edit and organize the projects displayed in your portfolio.
+                    </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        onClick={() => setShowOrganization(true)}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-200 hover:border-amber-400 hover:text-amber-300"
+                    >
+                        <FolderKanban size={17} /> Manage categories &amp; placements
+                    </button>
+                    <button
+                        onClick={() => setShowMigration((value) => !value)}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-400/40 px-4 py-2.5 text-sm font-medium text-amber-300 hover:bg-amber-400/10"
+                    >
+                        <RefreshCw size={17} /> Import existing projects
+                    </button>
+                    <button
+                        onClick={openNewProject}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-300"
+                    >
+                        <Plus size={17} /> Add project
+                    </button>
+                </div>
+            </div>
+
+            {notice && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                    {notice}
+                </div>
+            )}
+
+            {error && !showEditor && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                    {error}
+                </div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+                    <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search projects..."
+                        className={`${inputClass} pl-10`}
+                    />
+                </div>
+                <button
+                    onClick={loadData}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
+                >
+                    <RefreshCw size={16} /> Refresh
+                </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                    ["Total projects", projects.length],
+                    ["Published", projects.filter((item) => item.is_published).length],
+                    ["Drafts", projects.filter((item) => !item.is_published).length],
+                    ["Featured", projects.filter((item) => item.is_featured).length],
+                ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-white/10 bg-[#11151f] p-4">
+                        <p className="text-xs text-slate-500">{label}</p>
+                        <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-[#11151f]">
+                {loading ? (
+                    <div className="p-10 text-center text-sm text-slate-400">Loading projects...</div>
+                ) : filteredProjects.length === 0 ? (
+                    <div className="p-10 text-center">
+                        <FolderKanban className="mx-auto mb-3 text-slate-600" size={34} />
+                        <p className="font-medium text-white">No projects found</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Add your first project or adjust your search.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[760px] text-left text-sm">
+                            <thead className="border-b border-white/10 bg-white/[0.02] text-xs uppercase tracking-wide text-slate-500">
+                                <tr>
+                                    <th className="px-5 py-4">Project</th>
+                                    <th className="px-4 py-4">Category</th>
+                                    <th className="px-4 py-4">Status</th>
+                                    <th className="px-4 py-4">Order</th>
+                                    <th className="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filteredProjects.map((project) => (
+                                    <tr key={project.id} className="hover:bg-white/[0.02]">
+                                        <td className="px-5 py-4">
+                                            <p className="font-medium text-white">{project.title}</p>
+                                            <p className="mt-1 text-xs text-slate-500">{project.project_key}</p>
+                                            {project.is_featured && (
+                                                <span className="mt-2 inline-block text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                                                    Featured
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-4 text-slate-400">{project.category || "â€”"}</td>
+                                        <td className="px-4 py-4">
+                                            <span className={`rounded-full px-2.5 py-1 text-xs ${
+                                                project.is_published
+                                                    ? "bg-emerald-400/10 text-emerald-300"
+                                                    : "bg-slate-400/10 text-slate-400"
+                                            }`}>
+                                                {project.is_published ? "Published" : "Draft"}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-4 text-slate-400">{project.sort_order}</td>
+                                        <td className="px-5 py-4">
+                                            <div className="flex justify-end gap-2">
+                                                {project.live_url && (
+                                                    <a
+                                                        href={project.live_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white"
+                                                        title="Open live project"
+                                                    >
+                                                        <ExternalLink size={16} />
+                                                    </a>
+                                                )}
+                                                <button
+                                                    onClick={() => openEditProject(project)}
+                                                    className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-amber-300"
+                                                    title="Edit project"
+                                                >
+                                                    <Pencil size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteProject(project)}
+                                                    className="rounded-lg p-2 text-slate-400 hover:bg-red-500/10 hover:text-red-300"
+                                                    title="Delete project"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {showEditor && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-3 backdrop-blur-sm sm:p-6">
+                    <div className="mx-auto my-4 max-w-4xl rounded-2xl border border-white/10 bg-[#11151f] shadow-2xl">
+                        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#11151f] px-5 py-4">
+                            <div>
+                                <h2 className="text-lg font-semibold text-white">
+                                    {editingId ? "Edit project" : "Create project"}
+                                </h2>
+                                <p className="text-xs text-slate-500">Project details and portfolio content</p>
+                            </div>
+                            <button
+                                onClick={() => setShowEditor(false)}
+                                className="rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={saveProject} className="space-y-6 p-5">
+                            {error && (
+                                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
+                                    {error}
+                                </div>
+                            )}
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="sm:col-span-2">
+                                    <label className={labelClass}>Project title *</label>
+                                    <input required value={form.title} onChange={(e) => updateField("title", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Project key / slug</label>
+                                    <input
+                                        value={form.project_key}
+                                        onChange={(e) => updateField("project_key", e.target.value)}
+                                        placeholder={slugify(form.title) || "project-name"}
+                                        className={inputClass}
+                                    />
+                                    <p className="mt-1 text-xs text-slate-500">Leave blank to generate from the title.</p>
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Category label</label>
+                                    <input value={form.category || ""} onChange={(e) => updateField("category", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <label className={labelClass}>Subtitle</label>
+                                    <input value={form.subtitle || ""} onChange={(e) => updateField("subtitle", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <label className={labelClass}>Description</label>
+                                    <textarea rows={4} value={form.description || ""} onChange={(e) => updateField("description", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>GitHub URL</label>
+                                    <input type="url" value={form.github_url || ""} onChange={(e) => updateField("github_url", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Live URL</label>
+                                    <input type="url" value={form.live_url || ""} onChange={(e) => updateField("live_url", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Data source label</label>
+                                    <input value={form.data_source_label || ""} onChange={(e) => updateField("data_source_label", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Data source URL</label>
+                                    <input type="url" value={form.data_source_url || ""} onChange={(e) => updateField("data_source_url", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Icon name (Lucide)</label>
+                                    <input value={form.icon || ""} onChange={(e) => updateField("icon", e.target.value)} className={inputClass} placeholder="chart-no-axes-combined" />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Project number</label>
+                                    <input type="number" value={form.project_number} onChange={(e) => updateField("project_number", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Display order</label>
+                                    <input type="number" value={form.sort_order} onChange={(e) => updateField("sort_order", e.target.value)} className={inputClass} />
+                                </div>
+
+                                <div>
+                                    <label className={labelClass}>Technologies (one per line)</label>
+                                    <textarea rows={5} value={form.technologies} onChange={(e) => updateField("technologies", e.target.value)} className={inputClass} placeholder={"React\nPython\nSQL"} />
+                                </div>
+                            </div>
+
+                            <div className="grid gap-5 sm:grid-cols-2">
+                                <div>
+                                    <h3 className="mb-3 font-medium text-white">Project categories</h3>
+                                    <div className="space-y-2 rounded-lg border border-white/10 p-3">
+                                        {categories.length === 0 ? (
+                                            <p className="text-xs text-slate-500">No categories have been created yet.</p>
+                                        ) : categories.map((category) => (
+                                            <label key={category.id} className="flex items-center gap-2 text-sm text-slate-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.category_ids.includes(category.id)}
+                                                    onChange={() => toggleAssignment("category_ids", category.id)}
+                                                    className="accent-amber-400"
+                                                />
+                                                {category.name}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="mb-3 font-medium text-white">Display placements</h3>
+                                    <div className="space-y-2 rounded-lg border border-white/10 p-3">
+                                        {placements.length === 0 ? (
+                                            <p className="text-xs text-slate-500">No placements have been created yet.</p>
+                                        ) : placements.map((placement) => (
+                                            <label key={placement.id} className="flex items-center gap-2 text-sm text-slate-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.placement_ids.includes(placement.id)}
+                                                    onChange={() => toggleAssignment("placement_ids", placement.id)}
+                                                    className="accent-amber-400"
+                                                />
+                                                {placement.name}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className={labelClass}>Detailed project content (JSON array)</label>
+                                <textarea
+                                    rows={14}
+                                    spellCheck={false}
+                                    value={form.content_blocks}
+                                    onChange={(e) => updateField("content_blocks", e.target.value)}
+                                    className={`${inputClass} font-mono text-xs leading-6`}
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                    This stores your detailed project sections, media references, tables and other structured content.
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-5 rounded-lg border border-white/10 p-4">
+                                <label className="flex items-center gap-2 text-sm text-slate-300">
+                                    <input type="checkbox" checked={form.is_featured} onChange={(e) => updateField("is_featured", e.target.checked)} className="accent-amber-400" />
+                                    Featured project
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-slate-300">
+                                    <input type="checkbox" checked={form.is_published} onChange={(e) => updateField("is_published", e.target.checked)} className="accent-amber-400" />
+                                    Published
+                                </label>
+                            </div>
+
+                            <div className="flex flex-col-reverse justify-end gap-3 border-t border-white/10 pt-5 sm:flex-row">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEditor(false)}
+                                    className="rounded-lg border border-white/10 px-5 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={saving}
+                                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-semibold text-black hover:bg-amber-300 disabled:opacity-60"
+                                >
+                                    <Save size={16} />
+                                    {saving ? "Saving..." : "Save project"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default ProjectsAdmin;
+
+
+
+
+========== AboutAdmin.jsx ==========
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabase";
+import { Plus, Trash2, Save, RefreshCw } from "lucide-react";
+
+const initialForm = {
+    heading: "Where Finance Meets Data, Economics and Technology.",
+    paragraphs: [
+        "I'm a Finance and Data Analytics professional with a BSc in Agricultural Economics from the University of Ghana. My background covers financial operations, transaction reconciliation, data analysis and research, and I'm particularly interested in how technology can make everyday business processes better.",
+        "At BRAC Ghana Savings and Loans, I worked with the Finance and Accounts team, where I handled transaction reconciliations, financial entries, documentation and fixed asset records across multiple branches. The experience gave me a practical understanding of financial operations and the importance of accuracy, organisation and good reporting.",
+        "Outside my finance work, I enjoy exploring data, finding patterns and turning information into useful insights. I also enjoy building things with code, which led me to develop ReconPro, a web application that simplifies financial reconciliation. I'm interested in bringing finance, data and technology together to solve practical problems.",
+    ],
+    stats: [
+        { target: 7, suffix: "+", label: "Analytics projects" },
+        { target: 2, suffix: "+", label: "Deployed digital projects" },
+        { target: 10, suffix: "+", label: "Tools & technologies" },
+    ],
+    focus_areas: [
+        { icon: "Landmark", title: "Finance & Accounting", description: "Financial operations, reconciliations, transaction processing and reporting." },
+        { icon: "ChartNoAxesCombined", title: "Data Analytics", description: "Data analysis, visualisation, business intelligence and evidence based decisions." },
+        { icon: "GraduationCap", title: "Economics & Research", description: "Econometrics, economic analysis, research and quantitative methods." },
+        { icon: "Code", title: "Software Development", description: "Building practical applications and technology driven solutions." },
+    ],
+    is_published: false,
+};
+
+function AboutAdmin() {
+    const [form, setForm] = useState(initialForm);
+    const [recordId, setRecordId] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+    const [notice, setNotice] = useState("");
+
+    async function loadData() {
+        setLoading(true);
+        setError("");
+
+        try {
+            const { data, error: queryError } = await supabase
+                .from("about_settings")
+                .select("*")
+                .order("created_at")
+                .limit(1);
+
+            if (queryError) throw queryError;
+
+            if (data?.[0]) {
+                const record = data[0];
+                setRecordId(record.id);
+                setForm({
+                    ...initialForm,
+                    ...record,
+                    paragraphs: record.paragraphs || [],
+                    stats: record.stats || [],
+                    focus_areas: record.focus_areas || [],
+                });
+            }
+        } catch (err) {
+            setError(err.message || "Unable to load About settings.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    function update(field, value) {
+        setForm((current) => ({ ...current, [field]: value }));
+    }
+
+    function updateArrayItem(field, index, key, value) {
+        setForm((current) => ({
+            ...current,
+            [field]: current[field].map((item, i) =>
+                i === index ? (typeof item === "object" ? { ...item, [key]: value } : value) : item
+            ),
+        }));
+    }
+
+    function addParagraph() {
+        update("paragraphs", [...form.paragraphs, ""]);
+    }
+
+    function addStat() {
+        update("stats", [...form.stats, { target: 0, suffix: "+", label: "" }]);
+    }
+
+    function addFocusArea() {
+        update("focus_areas", [
+            ...form.focus_areas,
+            { icon: "Star", title: "", description: "" },
+        ]);
+    }
+
+    function removeItem(field, index) {
+        update(field, form[field].filter((_, i) => i !== index));
+    }
+
+    async function save(publish) {
+        setSaving(true);
+        setError("");
+        setNotice("");
+
+        try {
+            const payload = {
+                heading: form.heading,
+                paragraphs: form.paragraphs,
+                stats: form.stats.map((item) => ({
+                    target: Number(item.target) || 0,
+                    suffix: item.suffix || "",
+                    label: item.label || "",
+                })),
+                focus_areas: form.focus_areas,
+                is_published: publish,
+            };
+
+            const result = recordId
+                ? await supabase.from("about_settings").update(payload).eq("id", recordId).select().single()
+                : await supabase.from("about_settings").insert(payload).select().single();
+
+            if (result.error) throw result.error;
+
+            setRecordId(result.data.id);
+            setForm((current) => ({ ...current, is_published: publish }));
+            setNotice(publish ? "About content published successfully." : "About draft saved successfully.");
+        } catch (err) {
+            setError(err.message || "Unable to save About settings.");
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (loading) {
+        return <div className="py-16 text-center text-slate-400">Loading About settings...</div>;
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-semibold text-white">About Page</h1>
+                    <p className="mt-1 text-sm text-slate-400">
+                        Manage your biography, highlights and professional focus areas.
+                    </p>
+                </div>
+                <button type="button" onClick={loadData} className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5">
+                    <RefreshCw size={15} /> Reload
+                </button>
+            </div>
+
+            {error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">{error}</div>}
+            {notice && <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">{notice}</div>}
+
+            <div className="space-y-7 rounded-2xl border border-white/[0.07] bg-[#11151f] p-5 md:p-7">
+                <section className="space-y-3">
+                    <h2 className="font-semibold text-white">Section heading</h2>
+                    <input value={form.heading || ""} onChange={(e) => update("heading", e.target.value)} className="w-full rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500" />
+                </section>
+
+                <section className="space-y-4 border-t border-white/[0.07] pt-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-semibold text-white">Biography paragraphs</h2>
+                        <button type="button" onClick={addParagraph} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add paragraph</button>
+                    </div>
+                    {form.paragraphs.map((paragraph, index) => (
+                        <div key={index} className="flex gap-3">
+                            <textarea rows={4} value={paragraph} onChange={(e) => updateArrayItem("paragraphs", index, null, e.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500" />
+                            <button type="button" onClick={() => removeItem("paragraphs", index)} className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10" title="Remove paragraph"><Trash2 size={17} /></button>
+                        </div>
+                    ))}
+                </section>
+
+                <section className="space-y-4 border-t border-white/[0.07] pt-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-semibold text-white">Statistics</h2>
+                        <button type="button" onClick={addStat} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add statistic</button>
+                    </div>
+                    {form.stats.map((stat, index) => (
+                        <div key={index} className="grid gap-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4 md:grid-cols-[1fr_1fr_2fr_auto]">
+                            <label className="space-y-2 text-xs text-slate-400">Target
+                                <input type="number" value={stat.target ?? 0} onChange={(e) => updateArrayItem("stats", index, "target", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                            </label>
+                            <label className="space-y-2 text-xs text-slate-400">Suffix
+                                <input value={stat.suffix || ""} onChange={(e) => updateArrayItem("stats", index, "suffix", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                            </label>
+                            <label className="space-y-2 text-xs text-slate-400">Label
+                                <input value={stat.label || ""} onChange={(e) => updateArrayItem("stats", index, "label", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                            </label>
+                            <button type="button" onClick={() => removeItem("stats", index)} className="self-end rounded-lg p-2 text-red-400 hover:bg-red-500/10"><Trash2 size={17} /></button>
+                        </div>
+                    ))}
+                </section>
+
+                <section className="space-y-4 border-t border-white/[0.07] pt-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-semibold text-white">Professional focus areas</h2>
+                        <button type="button" onClick={addFocusArea} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add focus area</button>
+                    </div>
+                    {form.focus_areas.map((area, index) => (
+                        <div key={index} className="space-y-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4">
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <label className="space-y-2 text-xs text-slate-400">Icon name (Lucide)
+                                    <input value={area.icon || ""} onChange={(e) => updateArrayItem("focus_areas", index, "icon", e.target.value)} placeholder="e.g. Landmark, Code, ChartNoAxesCombined" className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                                </label>
+                                <label className="space-y-2 text-xs text-slate-400">Title
+                                    <input value={area.title || ""} onChange={(e) => updateArrayItem("focus_areas", index, "title", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                                </label>
+                            </div>
+                            <div className="flex gap-3">
+                                <textarea rows={2} value={area.description || ""} onChange={(e) => updateArrayItem("focus_areas", index, "description", e.target.value)} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                                <button type="button" onClick={() => removeItem("focus_areas", index)} className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10"><Trash2 size={17} /></button>
+                            </div>
+                        </div>
+                    ))}
+                    <p className="text-xs text-slate-500">Use valid Lucide icon names. The public page will map these names to icons.</p>
+                </section>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5">
+                    <span className={`text-xs ${form.is_published ? "text-emerald-400" : "text-amber-400"}`}>
+                        {form.is_published ? "Currently published" : "Draft / unpublished"}
+                    </span>
+                    <div className="flex gap-3">
+                        <button type="button" disabled={saving} onClick={() => save(false)} className="rounded-xl border border-white/10 px-5 py-3 text-sm text-slate-200 hover:bg-white/5 disabled:opacity-50">Save draft</button>
+                        <button type="button" disabled={saving} onClick={() => save(true)} className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"><Save size={16} /> {saving ? "Saving..." : "Publish About"}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default AboutAdmin;
+
+========== Public about.jsx ==========
+import { useEffect, useRef, useState } from "react";
+import { motion, useInView } from "framer-motion";
+import { Landmark, ChartNoAxesCombined, GraduationCap, Code } from "lucide-react";
+import personImg from "../assets/about/person.jpg";
+import { aboutData } from "../data/about";
+import { supabase } from "../lib/supabase";
+
+// Analytics is 7 now
+
+function CountUp({ target, suffix }) {
+    const ref = useRef(null);
+    const inView = useInView(ref, { once: true, margin: "-40px" });
+    const [val, setVal] = useState(0);
+    useEffect(() => {
+        if (!inView) return;
+        const start = performance.now(); const dur = 1200;
+        let raf;
+        const tick = (now) => {
+            const p = Math.min((now - start) / dur, 1);
+            const eased = 1 - Math.pow(1 - p, 3);
+            setVal(Math.round(eased * target));
+            if (p < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [inView, target]);
+    return <p ref={ref} className="text-xl font-bold text-latte sm:text-2xl">{String(val).padStart(2, "0")}{suffix}</p>;
+}
+
+const aboutIconMap = {
+    Landmark,
+    ChartNoAxesCombined,
+    GraduationCap,
+    Code,
+};
+
+export default function About() {
+    const [content, setContent] = useState(aboutData);
+
+    useEffect(() => {
+        let active = true;
+
+        async function loadPublishedAbout() {
+            try {
+                const { data, error } = await supabase
+                    .from("about_settings")
+                    .select("*")
+                    .eq("is_published", true)
+                    .order("created_at", { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (error || !data || !active) return;
+
+                setContent({
+                    heading: data.heading ?? content.heading,
+                    paragraphs: Array.isArray(data.paragraphs) ? data.paragraphs : content.paragraphs,
+                    stats: Array.isArray(data.stats) ? data.stats : content.stats,
+                    focusAreas: Array.isArray(data.focus_areas) ? data.focus_areas : content.focusAreas,
+                });
+            } catch (error) {
+                console.error("Unable to load published About content:", error);
+            }
+        }
+
+        loadPublishedAbout();
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    return (
+        <section id="about" className="relative overflow-hidden bg-mocha py-12 sm:py-16">
+            <div className="container relative mx-auto max-w-7xl px-6 lg:px-10">
+                <div className="grid items-start gap-6 lg:grid-cols-[0.62fr_1.38fr] lg:gap-10">
+                    {/* 1. PERSON - full image, no crop. Container matches real ratio 846x1280 */}
+                    <motion.div initial={{ opacity: 0, scale: 0.97 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mx-auto w-full max-w-[320px] overflow-hidden rounded-[1.5rem] lg:mx-0">
+                        <img src={personImg} alt="Salim Ibrahim" className="aspect-[846/1280] w-full object-cover object-center" />
+                    </motion.div>
+                    {/* RIGHT - 2. Title just About, 4. ALL writings back, smaller font */}
+                    <motion.div initial={{ opacity: 0, y: 25 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+                        <h2 className="text-4xl font-bold tracking-tight text-espresso sm:text-5xl">About</h2>
+                        <h3 className="mt-3 text-base font-semibold leading-relaxed text-gold sm:text-lg">
+                            {content.heading}
+                        </h3>
+                        <div className="mt-3 space-y-3 text-[13px] leading-6 text-cream/85">
+                            {content.paragraphs.map((paragraph, i) => (
+                                <p key={i}>{paragraph}</p>
+                            ))}
+                        </div>
+                        {/* 3. SMALLER + GLASS + COUNT-UP — now light glass on latte */}
+                        <div className="mt-4 grid grid-cols-3 gap-2.5">
+                            {content.stats.map((s) => (
+                                <div key={s.label} className="rounded-xl border border-white/15 bg-black/15 p-3 backdrop-blur-md">
+                                    <span className="mb-2 block h-2 w-2 rounded-full bg-gold" />
+                                    <CountUp target={s.target} suffix={s.suffix} />
+                                    <p className="mt-1 text-[10px] leading-3.5 text-cream/70 sm:text-[11px]">{s.label}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                </div>
+                <div className="mt-10">
+                    <h3 className="mb-5 text-xl font-bold text-espresso">Area of Focus</h3>
+                    <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                        {content.focusAreas.map((area, i) => {
+                            const Icon = typeof area.icon === "string" ? (aboutIconMap[area.icon] || Code) : (area.icon || Code); return (
+                                <motion.div key={area.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.08 }} className="rounded-2xl border border-white/10 bg-espresso/40 p-4 transition hover:-translate-y-1 hover:border-gold/50">
+                                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10 text-gold"><Icon size={20} /></div>
+                                    <h4 className="mb-1.5 text-sm font-semibold text-gold">{area.title}</h4>
+                                    <p className="text-[13px] leading-6 text-cream/70">{area.description}</p>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+

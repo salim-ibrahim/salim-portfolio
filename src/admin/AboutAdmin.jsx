@@ -1,8 +1,13 @@
+
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { fetchMediaAssets, getMediaPublicUrl } from "../lib/media";
 import { Plus, Trash2, Save, RefreshCw } from "lucide-react";
 
 const initialForm = {
+    profile_media_id: "",
+    profile_back_media_id: "",
+    profile_band_media_id: "",
     heading: "Where Finance Meets Data, Economics and Technology.",
     paragraphs: [
         "I'm a Finance and Data Analytics professional with a BSc in Agricultural Economics from the University of Ghana. My background covers financial operations, transaction reconciliation, data analysis and research, and I'm particularly interested in how technology can make everyday business processes better.",
@@ -26,6 +31,7 @@ const initialForm = {
 function AboutAdmin() {
     const [form, setForm] = useState(initialForm);
     const [recordId, setRecordId] = useState(null);
+    const [mediaAssets, setMediaAssets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
@@ -44,16 +50,29 @@ function AboutAdmin() {
 
             if (queryError) throw queryError;
 
+            const assets = await fetchMediaAssets();
+            setMediaAssets(
+                (assets || []).filter((asset) =>
+                    asset.mime_type?.startsWith("image/")
+                )
+            );
+
             if (data?.[0]) {
                 const record = data[0];
                 setRecordId(record.id);
                 setForm({
                     ...initialForm,
                     ...record,
-                    paragraphs: record.paragraphs || [],
-                    stats: record.stats || [],
-                    focus_areas: record.focus_areas || [],
+                    profile_media_id: record.profile_media_id || "",
+                    profile_back_media_id: record.profile_back_media_id || "",
+                    profile_band_media_id: record.profile_band_media_id || "",
+                    paragraphs: record.paragraphs || initialForm.paragraphs,
+                    stats: record.stats || initialForm.stats,
+                    focus_areas: record.focus_areas || initialForm.focus_areas,
                 });
+            } else {
+                setRecordId(null);
+                setForm(initialForm);
             }
         } catch (err) {
             setError(err.message || "Unable to load About settings.");
@@ -70,11 +89,18 @@ function AboutAdmin() {
         setForm((current) => ({ ...current, [field]: value }));
     }
 
+    function imageUrl(mediaId) {
+        const asset = mediaAssets.find((item) => item.id === mediaId);
+        return asset ? getMediaPublicUrl(asset) : "";
+    }
+
     function updateArrayItem(field, index, key, value) {
         setForm((current) => ({
             ...current,
             [field]: current[field].map((item, i) =>
-                i === index ? (typeof item === "object" ? { ...item, [key]: value } : value) : item
+                i === index
+                    ? (typeof item === "object" ? { ...item, [key]: value } : value)
+                    : item
             ),
         }));
     }
@@ -106,6 +132,9 @@ function AboutAdmin() {
         try {
             const payload = {
                 heading: form.heading,
+                profile_media_id: form.profile_media_id || null,
+                profile_back_media_id: form.profile_back_media_id || null,
+                profile_band_media_id: form.profile_band_media_id || null,
                 paragraphs: form.paragraphs,
                 stats: form.stats.map((item) => ({
                     target: Number(item.target) || 0,
@@ -117,14 +146,27 @@ function AboutAdmin() {
             };
 
             const result = recordId
-                ? await supabase.from("about_settings").update(payload).eq("id", recordId).select().single()
-                : await supabase.from("about_settings").insert(payload).select().single();
+                ? await supabase
+                    .from("about_settings")
+                    .update(payload)
+                    .eq("id", recordId)
+                    .select()
+                    .single()
+                : await supabase
+                    .from("about_settings")
+                    .insert(payload)
+                    .select()
+                    .single();
 
             if (result.error) throw result.error;
 
             setRecordId(result.data.id);
             setForm((current) => ({ ...current, is_published: publish }));
-            setNotice(publish ? "About content published successfully." : "About draft saved successfully.");
+            setNotice(
+                publish
+                    ? "About content published successfully."
+                    : "About draft saved successfully."
+            );
         } catch (err) {
             setError(err.message || "Unable to save About settings.");
         } finally {
@@ -132,8 +174,59 @@ function AboutAdmin() {
         }
     }
 
+    function ImageSelector({ title, description, field, alt }) {
+        const selectedUrl = imageUrl(form[field]);
+
+        return (
+            <div className="space-y-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4">
+                <div>
+                    <h3 className="text-sm font-medium text-white">{title}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{description}</p>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                    <div className="min-w-0 flex-1">
+                        <select
+                            value={form[field] || ""}
+                            onChange={(e) => update(field, e.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-[#11151f] px-4 py-3 text-sm text-white outline-none focus:border-violet-500"
+                        >
+                            <option value="">Use default / no image selected</option>
+                            {mediaAssets.map((asset) => (
+                                <option key={asset.id} value={asset.id}>
+                                    {asset.original_name || asset.file_path}
+                                </option>
+                            ))}
+                        </select>
+
+                        <button
+                            type="button"
+                            onClick={() => update(field, "")}
+                            disabled={!form[field]}
+                            className="mt-2 text-xs text-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            Remove selected image
+                        </button>
+                    </div>
+
+                    {selectedUrl && (
+                        <img
+                            src={selectedUrl}
+                            alt={alt}
+                            className="h-40 w-full rounded-xl border border-white/10 object-cover object-center sm:w-32"
+                        />
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     if (loading) {
-        return <div className="py-16 text-center text-slate-400">Loading About settings...</div>;
+        return (
+            <div className="py-16 text-center text-slate-400">
+                Loading About settings...
+            </div>
+        );
     }
 
     return (
@@ -145,29 +238,107 @@ function AboutAdmin() {
                         Manage your biography, highlights and professional focus areas.
                     </p>
                 </div>
-                <button type="button" onClick={loadData} className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5">
+
+                <button
+                    type="button"
+                    onClick={loadData}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+                >
                     <RefreshCw size={15} /> Reload
                 </button>
             </div>
 
-            {error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">{error}</div>}
-            {notice && <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">{notice}</div>}
+            {error && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+                    {error}
+                </div>
+            )}
+
+            {notice && (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-300">
+                    {notice}
+                </div>
+            )}
 
             <div className="space-y-7 rounded-2xl border border-white/[0.07] bg-[#11151f] p-5 md:p-7">
                 <section className="space-y-3">
                     <h2 className="font-semibold text-white">Section heading</h2>
-                    <input value={form.heading || ""} onChange={(e) => update("heading", e.target.value)} className="w-full rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500" />
+                    <input
+                        value={form.heading || ""}
+                        onChange={(e) => update("heading", e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500"
+                    />
+                </section>
+
+                <section className="space-y-4 border-t border-white/[0.07] pt-6">
+                    <div>
+                        <h2 className="font-semibold text-white">3D profile card images</h2>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Select each image independently from your Media Library.
+                            Upload new images in the Media Library before selecting them here.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <ImageSelector
+                            title="Front image"
+                            description="Your main profile photograph, displayed on the front of the card."
+                            field="profile_media_id"
+                            alt="Front profile image preview"
+                        />
+
+                        <ImageSelector
+                            title="Back image"
+                            description="The complementary visual displayed on the back of the 3D card."
+                            field="profile_back_media_id"
+                            alt="Back profile image preview"
+                        />
+
+                        <ImageSelector
+                            title="Band image"
+                            description="The visual used for the card's band or side layer."
+                            field="profile_band_media_id"
+                            alt="Band profile image preview"
+                        />
+                    </div>
+
+                    {mediaAssets.length === 0 && (
+                        <p className="text-xs text-amber-300">
+                            No images found in the Media Library.
+                        </p>
+                    )}
                 </section>
 
                 <section className="space-y-4 border-t border-white/[0.07] pt-6">
                     <div className="flex items-center justify-between gap-3">
                         <h2 className="font-semibold text-white">Biography paragraphs</h2>
-                        <button type="button" onClick={addParagraph} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add paragraph</button>
+                        <button
+                            type="button"
+                            onClick={addParagraph}
+                            className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"
+                        >
+                            <Plus size={14} /> Add paragraph
+                        </button>
                     </div>
+
                     {form.paragraphs.map((paragraph, index) => (
                         <div key={index} className="flex gap-3">
-                            <textarea rows={4} value={paragraph} onChange={(e) => updateArrayItem("paragraphs", index, null, e.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500" />
-                            <button type="button" onClick={() => removeItem("paragraphs", index)} className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10" title="Remove paragraph"><Trash2 size={17} /></button>
+                            <textarea
+                                rows={4}
+                                value={paragraph}
+                                onChange={(e) =>
+                                    updateArrayItem("paragraphs", index, null, e.target.value)
+                                }
+                                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0b0f18] px-4 py-3 text-sm text-white outline-none focus:border-violet-500"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeItem("paragraphs", index)}
+                                className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                                title="Remove paragraph"
+                            >
+                                <Trash2 size={17} />
+                            </button>
                         </div>
                     ))}
                 </section>
@@ -175,20 +346,61 @@ function AboutAdmin() {
                 <section className="space-y-4 border-t border-white/[0.07] pt-6">
                     <div className="flex items-center justify-between gap-3">
                         <h2 className="font-semibold text-white">Statistics</h2>
-                        <button type="button" onClick={addStat} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add statistic</button>
+                        <button
+                            type="button"
+                            onClick={addStat}
+                            className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"
+                        >
+                            <Plus size={14} /> Add statistic
+                        </button>
                     </div>
+
                     {form.stats.map((stat, index) => (
-                        <div key={index} className="grid gap-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4 md:grid-cols-[1fr_1fr_2fr_auto]">
-                            <label className="space-y-2 text-xs text-slate-400">Target
-                                <input type="number" value={stat.target ?? 0} onChange={(e) => updateArrayItem("stats", index, "target", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                        <div
+                            key={index}
+                            className="grid gap-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4 md:grid-cols-[1fr_1fr_2fr_auto]"
+                        >
+                            <label className="space-y-2 text-xs text-slate-400">
+                                Target
+                                <input
+                                    type="number"
+                                    value={stat.target ?? 0}
+                                    onChange={(e) =>
+                                        updateArrayItem("stats", index, "target", e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                />
                             </label>
-                            <label className="space-y-2 text-xs text-slate-400">Suffix
-                                <input value={stat.suffix || ""} onChange={(e) => updateArrayItem("stats", index, "suffix", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+
+                            <label className="space-y-2 text-xs text-slate-400">
+                                Suffix
+                                <input
+                                    value={stat.suffix || ""}
+                                    onChange={(e) =>
+                                        updateArrayItem("stats", index, "suffix", e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                />
                             </label>
-                            <label className="space-y-2 text-xs text-slate-400">Label
-                                <input value={stat.label || ""} onChange={(e) => updateArrayItem("stats", index, "label", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+
+                            <label className="space-y-2 text-xs text-slate-400">
+                                Label
+                                <input
+                                    value={stat.label || ""}
+                                    onChange={(e) =>
+                                        updateArrayItem("stats", index, "label", e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                />
                             </label>
-                            <button type="button" onClick={() => removeItem("stats", index)} className="self-end rounded-lg p-2 text-red-400 hover:bg-red-500/10"><Trash2 size={17} /></button>
+
+                            <button
+                                type="button"
+                                onClick={() => removeItem("stats", index)}
+                                className="self-end rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                            >
+                                <Trash2 size={17} />
+                            </button>
                         </div>
                     ))}
                 </section>
@@ -196,34 +408,93 @@ function AboutAdmin() {
                 <section className="space-y-4 border-t border-white/[0.07] pt-6">
                     <div className="flex items-center justify-between gap-3">
                         <h2 className="font-semibold text-white">Professional focus areas</h2>
-                        <button type="button" onClick={addFocusArea} className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"><Plus size={14} /> Add focus area</button>
+                        <button
+                            type="button"
+                            onClick={addFocusArea}
+                            className="flex items-center gap-1 rounded-lg bg-violet-500/10 px-3 py-2 text-xs text-violet-300"
+                        >
+                            <Plus size={14} /> Add focus area
+                        </button>
                     </div>
+
                     {form.focus_areas.map((area, index) => (
-                        <div key={index} className="space-y-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4">
+                        <div
+                            key={index}
+                            className="space-y-3 rounded-xl border border-white/[0.07] bg-[#0b0f18] p-4"
+                        >
                             <div className="grid gap-3 md:grid-cols-2">
-                                <label className="space-y-2 text-xs text-slate-400">Icon name (Lucide)
-                                    <input value={area.icon || ""} onChange={(e) => updateArrayItem("focus_areas", index, "icon", e.target.value)} placeholder="e.g. Landmark, Code, ChartNoAxesCombined" className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+                                <label className="space-y-2 text-xs text-slate-400">
+                                    Icon name (Lucide)
+                                    <input
+                                        value={area.icon || ""}
+                                        onChange={(e) =>
+                                            updateArrayItem("focus_areas", index, "icon", e.target.value)
+                                        }
+                                        placeholder="e.g. Landmark, Code, ChartNoAxesCombined"
+                                        className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                    />
                                 </label>
-                                <label className="space-y-2 text-xs text-slate-400">Title
-                                    <input value={area.title || ""} onChange={(e) => updateArrayItem("focus_areas", index, "title", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
+
+                                <label className="space-y-2 text-xs text-slate-400">
+                                    Title
+                                    <input
+                                        value={area.title || ""}
+                                        onChange={(e) =>
+                                            updateArrayItem("focus_areas", index, "title", e.target.value)
+                                        }
+                                        className="w-full rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                    />
                                 </label>
                             </div>
+
                             <div className="flex gap-3">
-                                <textarea rows={2} value={area.description || ""} onChange={(e) => updateArrayItem("focus_areas", index, "description", e.target.value)} className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white" />
-                                <button type="button" onClick={() => removeItem("focus_areas", index)} className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10"><Trash2 size={17} /></button>
+                                <textarea
+                                    rows={2}
+                                    value={area.description || ""}
+                                    onChange={(e) =>
+                                        updateArrayItem("focus_areas", index, "description", e.target.value)
+                                    }
+                                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#11151f] px-3 py-2 text-sm text-white"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => removeItem("focus_areas", index)}
+                                    className="self-start rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                                >
+                                    <Trash2 size={17} />
+                                </button>
                             </div>
                         </div>
                     ))}
-                    <p className="text-xs text-slate-500">Use valid Lucide icon names. The public page will map these names to icons.</p>
+
+                    <p className="text-xs text-slate-500">
+                        Use valid Lucide icon names. The public page will map these names to icons.
+                    </p>
                 </section>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5">
                     <span className={`text-xs ${form.is_published ? "text-emerald-400" : "text-amber-400"}`}>
                         {form.is_published ? "Currently published" : "Draft / unpublished"}
                     </span>
+
                     <div className="flex gap-3">
-                        <button type="button" disabled={saving} onClick={() => save(false)} className="rounded-xl border border-white/10 px-5 py-3 text-sm text-slate-200 hover:bg-white/5 disabled:opacity-50">Save draft</button>
-                        <button type="button" disabled={saving} onClick={() => save(true)} className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"><Save size={16} /> {saving ? "Saving..." : "Publish About"}</button>
+                        <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => save(false)}
+                            className="rounded-xl border border-white/10 px-5 py-3 text-sm text-slate-200 hover:bg-white/5 disabled:opacity-50"
+                        >
+                            Save draft
+                        </button>
+
+                        <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => save(true)}
+                            className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+                        >
+                            <Save size={16} /> {saving ? "Saving..." : "Publish About"}
+                        </button>
                     </div>
                 </div>
             </div>

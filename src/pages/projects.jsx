@@ -1,4 +1,4 @@
-import {
+﻿import {
     analyticsProjects,
     featuredProject,
     reconSections,
@@ -176,8 +176,13 @@ function WebAppCarousel({ projects = [], onSelect }) {
 
 
 // WEBSITE DEVELOPMENT 3D COVERFLOW CAROUSEL
+
 function WebsiteCoverflow({ projects = [], onSelect }) {
     const [active, setActive] = useState(0);
+    const touchStart = useRef(null);
+    const touchEnd = useRef(null);
+    const dragStart = useRef(null);
+
     useEffect(() => {
         if (projects.length <= 1) return;
 
@@ -187,10 +192,61 @@ function WebsiteCoverflow({ projects = [], onSelect }) {
 
         return () => clearInterval(timer);
     }, [projects.length]);
+
     if (!projects.length) return null;
 
+    const changeCard = (direction) => {
+        setActive((prev) =>
+            (prev + direction + projects.length) % projects.length
+        );
+    };
+
+    const handleTouchStart = (e) => {
+        touchStart.current = e.touches[0].clientX;
+    };
+
+    const handleTouchEnd = (e) => {
+        if (touchStart.current === null) return;
+
+        touchEnd.current = e.changedTouches[0].clientX;
+        const distance = touchStart.current - touchEnd.current;
+
+        if (Math.abs(distance) > 45) {
+            changeCard(distance > 0 ? 1 : -1);
+        }
+
+        touchStart.current = null;
+        touchEnd.current = null;
+    };
+
+    const handlePointerDown = (e) => {
+        if (e.pointerType === "touch") return;
+        dragStart.current = e.clientX;
+    };
+
+    const handlePointerUp = (e) => {
+        if (dragStart.current === null) return;
+
+        const distance = dragStart.current - e.clientX;
+
+        if (Math.abs(distance) > 45) {
+            changeCard(distance > 0 ? 1 : -1);
+        }
+
+        dragStart.current = null;
+    };
+
     return (
-        <div className="relative flex h-full w-full items-center justify-center overflow-hidden [perspective:1200px]">
+        <div
+            className="relative flex h-full w-full items-center justify-center overflow-hidden touch-pan-y [perspective:1200px]"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={() => {
+                dragStart.current = null;
+            }}
+        >
             {projects.map((project, index) => {
                 let offset = index - active;
 
@@ -211,7 +267,12 @@ function WebsiteCoverflow({ projects = [], onSelect }) {
                             x: offset * 105,
                             rotateY: offset * -32,
                             scale: isActive ? 1 : 0.78,
-                            opacity: Math.abs(offset) > 1 ? 0 : isActive ? 1 : 0.55,
+                            opacity:
+                                Math.abs(offset) > 1
+                                    ? 0
+                                    : isActive
+                                        ? 1
+                                        : 0.55,
                             z: isActive ? 100 : -80,
                         }}
                         transition={{
@@ -226,7 +287,7 @@ function WebsiteCoverflow({ projects = [], onSelect }) {
 
                             onSelect?.(project);
                         }}
-                        className="absolute flex h-[88%] w-[43%] cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-black/50 shadow-2xl"
+                        className="absolute flex h-[88%] aspect-[9/16] w-auto cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-black/50 shadow-2xl"
                         style={{
                             transformStyle: "preserve-3d",
                             zIndex: 10 - Math.abs(offset),
@@ -235,15 +296,16 @@ function WebsiteCoverflow({ projects = [], onSelect }) {
                         <img
                             src={project.front}
                             alt={project.title}
-                            className="h-full w-full object-contain"
+                            className="h-full w-full object-cover"
+                            draggable={false}
                         />
                     </motion.div>
                 );
             })}
-
         </div>
     );
 }
+
 async function fetchPublishedProjectCollections() {
     const [
         projectsResult,
@@ -474,18 +536,18 @@ export default function Projects() {
                         <WebAppCarousel
                             projects={collections.webAppProjects}
                             onSelect={(project) =>
-    setSelected(
-        project.title === featuredProject.title
-            ? {
-                ...project,
-                isFeatured: true,
-                sections: project.sections?.length
-                    ? project.sections
-                    : reconSections,
-            }
-            : project
-    )
-}
+                                setSelected(
+                                    project.title === featuredProject.title
+                                        ? {
+                                            ...project,
+                                            isFeatured: true,
+                                            sections: project.sections?.length
+                                                ? project.sections
+                                                : reconSections,
+                                        }
+                                        : project
+                                )
+                            }
                         />
                     </div>
 

@@ -347,7 +347,7 @@ function CircularText({
             `}</style>
 
             <div
-                className="home-circular-wrapper relative mx-auto rounded-full"
+                className="home-circular-wrapper relative mx-auto rounded-full bg-black"
                 style={{ width: size, height: size }}
                 aria-label={text}
             >
@@ -499,8 +499,8 @@ export default function Home() {
                     </h2>
                     <p className="mt-5 max-w-xl leading-8 text-cream/85">{content.introduction}</p>
                     <div className="mt-8 flex flex-wrap items-center gap-3">
-                        <a href="#projects" className="inline-flex items-center gap-2 rounded-full bg-[#A678B9] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#8F5FA8]">Explore My Work <ArrowUpRight size={17} /></a>
-                        <button type="button" onClick={() => setShowDownloads(true)} className="inline-flex items-center gap-2 rounded-full bg-[#A678B9] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#8F5FA8]"><Download size={17} />CV / Resume</button>
+                        <a href="#projects" className="inline-flex items-center gap-2 rounded-full bg-[#A678B9] px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-[#8F5FA8]">Explore My Work <ArrowUpRight size={17} /></a>
+                        <button type="button" onClick={() => setShowDownloads(true)} className="inline-flex items-center gap-2 rounded-full bg-[#A678B9] px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-[#8F5FA8]"><Download size={17} />CV / Resume</button>
                     </div>
                 </motion.div>
             </div>
