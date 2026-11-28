@@ -26,11 +26,13 @@ export default function Experience() {
         let active = true;
 
         async function loadPublishedExperiences() {
+
             const { data, error } = await supabase
                 .from("experiences")
                 .select("id, role, company, location, employment_type, start_date, end_date, is_current, responsibilities, sort_order")
                 .eq("is_published", true)
-                .order("sort_order");
+                .order("sort_order", { ascending: true });
+
 
             if (error || !data?.length || !active) return;
 

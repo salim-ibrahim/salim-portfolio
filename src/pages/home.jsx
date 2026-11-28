@@ -398,6 +398,40 @@ export default function Home() {
     const [content, setContent] = useState(homeData);
     const documents = Object.values(content.documents);
 
+    async function downloadDocument(document) {
+        if (!document?.file) return;
+
+        const fallbackName = (document.label || "document")
+            .replace(/^download\s*/i, "")
+            .trim() || "document";
+        const filename = `${fallbackName.replace(/[^a-z0-9 _.-]/gi, "")}.pdf`;
+
+        try {
+            const response = await fetch(document.file);
+            if (!response.ok) throw new Error(`Download failed (${response.status})`);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const anchor = documentCreateAnchor(blobUrl, filename);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+        } catch (error) {
+            console.error("Direct document download failed:", error);
+            // Open the document in a separate tab as a fallback so the portfolio
+            // itself remains in the original tab.
+            window.open(document.file, "_blank", "noopener,noreferrer");
+        }
+    }
+
+    function documentCreateAnchor(url, filename) {
+        const anchor = window.document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.style.display = "none";
+        window.document.body.appendChild(anchor);
+        return anchor;
+    }
+
     useEffect(() => {
         let active = true;
 
@@ -515,11 +549,11 @@ export default function Home() {
                             </div>
                             <div className="space-y-3">
                                 {documents.map((d) => (
-                                    <a key={d.label} href={d.file} download onClick={() => setShowDownloads(false)} className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-[#A678B9] hover:bg-[#6A5ACD]/10">
+                                    <button key={d.label} type="button" onClick={() => { setShowDownloads(false); downloadDocument(d); }} className="group flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-[#A678B9] hover:bg-[#6A5ACD]/10">
                                         <div className="rounded-xl bg-[#6A5ACD]/20 p-3 text-[#A678B9]"><FileText size={23} /></div>
                                         <div className="min-w-0 flex-1"><p className="font-semibold text-white">{d.label}</p><p className="mt-1 text-xs leading-5 text-white/60">{d.description}</p></div>
                                         <Download size={19} className="shrink-0 text-white/60 transition group-hover:text-[#A678B9]" />
-                                    </a>
+                                    </button>
                                 ))}
                             </div>
                             <button type="button" onClick={() => setShowDownloads(false)} className="mt-6 w-full rounded-full border border-white/10 px-5 py-3 text-sm text-white/80 transition hover:bg-white/5">Cancel</button>
@@ -543,3 +577,5 @@ export default function Home() {
         </section>
     );
 }
+
+

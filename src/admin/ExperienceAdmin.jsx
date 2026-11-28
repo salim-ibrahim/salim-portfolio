@@ -9,8 +9,8 @@ const emptyExperience = {
     company: "New company",
     location: "",
     employment_type: "",
-    start_date: "",
-    end_date: "",
+    start_date: null,
+    end_date: null,
     is_current: false,
     responsibilities: [],
     company_logo_media_id: null,
@@ -28,7 +28,10 @@ export default function ExperienceAdmin() {
         setLoading(true);
 
         const [experienceResult, mediaResult] = await Promise.all([
-            supabase.from("experiences").select("*").order("sort_order"),
+            supabase
+                .from("experiences")
+                .select("*")
+                .order("sort_order", { ascending: true }),
             supabase.from("media_assets")
                 .select("id,original_name,file_name,file_path,bucket_name")
                 .order("original_name"),
@@ -80,8 +83,8 @@ export default function ExperienceAdmin() {
             company: item.company.trim(),
             location: item.location?.trim() || null,
             employment_type: item.employment_type?.trim() || null,
-            start_date: item.start_date || null,
-            end_date: item.is_current ? null : (item.end_date || null),
+            start_date: item.start_date?.trim() || null,
+            end_date: item.is_current ? null : (item.end_date?.trim() || null),
             is_current: item.is_current,
             responsibilities: item.responsibilities
                 .map((value) => String(value).trim())
@@ -105,28 +108,56 @@ export default function ExperienceAdmin() {
         }
     }
 
+
+
     async function addExperience() {
+        if (busy) return;
+
         setBusy(true);
         setMessage("");
 
-        const { data, error } = await supabase
-            .from("experiences")
-            .insert({
-                ...emptyExperience,
-                sort_order: experiences.length,
-            })
-            .select()
-            .single();
+        try {
+            const sortOrders = experiences
+                .map((item) => Number(item.sort_order))
+                .filter(Number.isFinite);
 
-        setBusy(false);
+            const nextSortOrder = sortOrders.length
+                ? Math.min(...sortOrders) - 1
+                : 0;
 
-        if (error) {
-            setMessage(`Unable to add experience: ${error.message}`);
-        } else {
-            setMessage("New experience created as a draft.");
+            const { error } = await supabase
+                .from("experiences")
+                .insert({
+                    role: "New position",
+                    company: "New company",
+                    location: null,
+                    employment_type: null,
+                    start_date: null,
+                    end_date: null,
+                    is_current: false,
+                    responsibilities: [],
+                    company_logo_media_id: null,
+                    is_published: false,
+                    sort_order: nextSortOrder,
+                });
+
+            if (error) {
+                console.error("Experience insert error:", error);
+                setMessage(`Unable to add experience: ${error.message}`);
+                return;
+            }
+
             await loadData();
+            setMessage("New experience created at the top as a draft.");
+        } catch (error) {
+            console.error("Unexpected experience error:", error);
+            setMessage(`Unable to add experience: ${error.message}`);
+        } finally {
+            setBusy(false);
         }
     }
+
+
 
     async function deleteExperience(item) {
         if (!window.confirm(`Delete "${item.role || "this experience"}" at ${item.company || "this company"}?`)) {
@@ -256,11 +287,10 @@ export default function ExperienceAdmin() {
                                 </div>
 
                                 <div className="flex items-center gap-2">
-                                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                        item.is_published
-                                            ? "bg-emerald-500/15 text-emerald-300"
-                                            : "bg-amber-500/15 text-amber-300"
-                                    }`}>
+                                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.is_published
+                                        ? "bg-emerald-500/15 text-emerald-300"
+                                        : "bg-amber-500/15 text-amber-300"
+                                        }`}>
                                         {item.is_published ? "Published" : "Draft"}
                                     </span>
 
@@ -463,5 +493,6 @@ function Field({ label, children }) {
         </label>
     );
 }
+
 
 
